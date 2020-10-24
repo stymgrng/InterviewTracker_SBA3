@@ -1,189 +1,63 @@
-package com.eval.coronakit.controller;
+package com.wf.training.sba3.controller;
 
-import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
 
-import javax.servlet.http.HttpSession;
+import javax.validation.Valid;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Controller;
-import org.springframework.ui.Model;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
-import com.eval.coronakit.entity.CoronaKit;
-import com.eval.coronakit.entity.KitDetail;
-import com.eval.coronakit.entity.ProductMaster;
-import com.eval.coronakit.service.CoronaKitService;
-import com.eval.coronakit.service.KitDetailService;
-import com.eval.coronakit.service.ProductService;
+import com.wf.training.sba3.dto.UserDTO;
+import com.wf.training.sba3.exception.UserNotFoundException;
+import com.wf.training.sba3.service.UserService;
 
-@Controller
-@RequestMapping("/user")
+@RestController
+@RequestMapping("/users")
 public class UserController {
 
 	@Autowired
-	ProductService productService;
+	UserService userService;
 
-	@Autowired
-	CoronaKitService coronaKitService;
+	@GetMapping("")
+	public ResponseEntity<List<UserDTO>> getAllUsers() {
 
-	@Autowired
-	KitDetailService kitDetailService;
+		List<UserDTO> userDTOList = this.userService.getAllUsers();
 
-	HttpSession session;
-
-	@RequestMapping("/home")
-	public String home() {
-		return "user-home";
+		return new ResponseEntity<List<UserDTO>>(userDTOList, new HttpHeaders(), HttpStatus.OK);
 	}
 
-	@RequestMapping("/show-kit")
-	public String showKit(Model model) {
-		return "show-cart";
+	@GetMapping("/{userId}")
+	public ResponseEntity<UserDTO> getUserWithId(@PathVariable("userId") Long userId) throws UserNotFoundException {
+
+		UserDTO userDTO = this.userService.getUserById(userId);
+
+		return new ResponseEntity<UserDTO>(userDTO, new HttpHeaders(), HttpStatus.OK);
 	}
 
-	@RequestMapping("/show-list")
-	public String showList(Model model) {
+	@PostMapping("")
+	public ResponseEntity<UserDTO> addNewUser(@Valid @RequestBody UserDTO userDTO) {
 
-		List<ProductMaster> productList = this.productService.getAllProducts();
-		model.addAttribute("productList", productList);
+		UserDTO addedUserDTO = this.userService.addNewUser(userDTO);
 
-		return "show-all-item-user";
+		return new ResponseEntity<UserDTO>(addedUserDTO, new HttpHeaders(), HttpStatus.OK);
 	}
 
-	@RequestMapping("/add-to-cart/{productId}")
-	public String showKit(@PathVariable("productId") int productId, HttpSession session) {
+	@DeleteMapping("/{userId}")
+	public ResponseEntity<UserDTO> deleteExistingUser(@PathVariable("userId") Long userId)
+			throws UserNotFoundException {
 
-		ProductMaster product = productService.getProductById(productId);
+		UserDTO userToDeleteDTO = this.userService.deleteUser(userId);
 
-		if(product!=null) {
-
-			if (session.getAttribute("CartDetails") == null) {
-
-				List<KitDetail> cartDetails = new ArrayList<KitDetail>();
-
-				KitDetail kit = new KitDetail();
-				kit.setProductId(product.getId());
-				kit.setProductName(product.getProductName());
-				kit.setAmount(product.getCost());
-				kit.setQuantity(1);
-
-				cartDetails.add(kit);
-
-				session.setAttribute("CartDetails", cartDetails);
-
-			} else {
-
-				List<KitDetail> cartDetails = (List<KitDetail>) session.getAttribute("CartDetails");
-
-				int index = getIndexOfItemAddedToCart(productId, cartDetails);
-
-				if (index == -1) {
-
-					KitDetail kit = new KitDetail();
-					kit.setProductId(product.getId());
-					kit.setProductName(product.getProductName());
-					kit.setAmount(product.getCost());
-					kit.setQuantity(1);
-
-					cartDetails.add(kit);
-
-				} else {
-
-					int quantity = cartDetails.get(index).getQuantity();
-					cartDetails.get(index).setQuantity(quantity + 1);
-
-				}
-
-				session.setAttribute("CartDetails", cartDetails);
-			}
-		}
-		return "redirect:/user/show-kit";
-	}
-
-
-	@RequestMapping("/checkout")
-	public String checkout(Model model) {
-
-		CoronaKit coronaKit = new CoronaKit();
-		model.addAttribute("CoronaKit", coronaKit);
-
-		return "checkout-address";
-
-	}
-
-	@RequestMapping("/finalize")
-	public String finalizeOrder(@RequestParam("deliveryAddress") String address, Model model, HttpSession session) {
-
-		List<KitDetail> cartDetails = (List<KitDetail>) session.getAttribute("CartDetails");
-
-		CoronaKit coronaKit = new CoronaKit();
-		coronaKit.setDeliveryAddress(address);
-		coronaKit.setOrderDate(LocalDateTime.now().toString());
-		coronaKit.setTotalAmount(getCartTotal(cartDetails));
-
-		coronaKit = coronaKitService.saveKit(coronaKit);
-
-		List<KitDetail> orderedKits = new ArrayList<KitDetail>();
-		for (int i = 0; i < cartDetails.size(); i++) {
-
-			KitDetail kit = cartDetails.get(i);
-
-			kit.setCoronaKitId(coronaKit.getId());
-			kit.setAmount(kit.getAmount() * kit.getQuantity());
-			orderedKits.add(kitDetailService.addKitItem(kit));
-		}
-
-		model.addAttribute("CoronaKit", coronaKit);
-		model.addAttribute("OrderedKits", orderedKits);
-
-		return "show-summary";
-	}
-
-	@RequestMapping("/delete/{itemId}")
-	public String deleteItem(@PathVariable("itemId") int itemId, HttpSession session) {
-
-		List<KitDetail> cartDetails = (List<KitDetail>) session.getAttribute("CartDetails");
-
-		if(cartDetails==null)
-			return "redirect:/user/show-list";
-
-		int index = getIndexOfItemAddedToCart(itemId, cartDetails);
-
-		cartDetails.remove(index);
-
-		if (cartDetails.isEmpty()) {
-
-			session.setAttribute("CartDetails", null);
-			return "redirect:/user/show-list";
-		}
-
-		session.setAttribute("CartDetails", cartDetails);
-
-		return "redirect:/user/show-kit";
-
-	}
-
-
-	private int getIndexOfItemAddedToCart(int productId, List<KitDetail> cartDetails) {
-
-		for (int index = 0; index < cartDetails.size(); index++) {
-			if (cartDetails.get(index).getProductId() == productId)
-				return index;
-		}
-		return -1;
-	}
-
-	private int getCartTotal(List<KitDetail> cartDetails) {
-
-		int total = 0;
-		for (int i = 0; i < cartDetails.size(); i++)
-			total += cartDetails.get(i).getAmount();
-
-		return total;
+		return new ResponseEntity<UserDTO>(userToDeleteDTO, new HttpHeaders(), HttpStatus.OK);
 	}
 
 }
